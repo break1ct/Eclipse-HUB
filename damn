@@ -1,0 +1,279 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Camera = workspace.CurrentCamera
+local LP = Players.LocalPlayer
+
+-- // SETTINGS GLOBAL //
+_G.AIM_ON = false
+_G.AIM_KEY = Enum.KeyCode.X
+_G.GUI_KEY = Enum.KeyCode.RightShift
+_G.Hitbox = false
+_G.HitboxSize = 5
+_G.AimbotFOV = 150
+_G.ShowFOV = false
+
+_G.EspBox = false
+_G.EspName = false
+_G.EspHealth = false
+_G.EspDistance = false
+
+local lockedPlayer = nil
+local GUI_VISIBLE = false
+local IsInteracting = false 
+
+-- // DRAWING FOV //
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1
+FOVCircle.Color = Color3.fromRGB(255, 0, 0)
+FOVCircle.Filled = false
+FOVCircle.Transparency = 1
+FOVCircle.Visible = false
+
+-- // CHỈ GIỮ ANIMATION CHO TOGGLE //
+local function Animate(obj, prop, time)
+    local tween = TweenService:Create(obj, TweenInfo.new(time or 0.1, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), prop)
+    tween:Play()
+    return tween
+end
+
+local function GetPlayerInfo(p)
+    if not p or not p.Team or not LP.Team then return false, Color3.new(1,1,1) end
+    local isEnemy = false
+    local myTeam, pTeam = LP.Team.Name, p.Team.Name
+    if myTeam == "Police" then
+        if pTeam == "Criminal" or pTeam == "Prisoner" then isEnemy = true end
+    elseif myTeam == "Criminal" or myTeam == "Prisoner" then
+        if pTeam == "Police" then isEnemy = true end
+    end
+    local color = isEnemy and (p.Team.Name == "Police" and Color3.fromRGB(0,120,255) or Color3.fromRGB(255,0,0)) or Color3.new(1,1,1)
+    return isEnemy, color
+end
+
+local function getNearestEnemy()
+    local mousePos = UserInputService:GetMouseLocation()
+    local nearest, shortest = nil, _G.AimbotFOV
+    for _, p in ipairs(Players:GetPlayers()) do
+        local isEnemy = GetPlayerInfo(p)
+        if isEnemy and p ~= LP and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            local pos, onscreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
+            if onscreen then
+                local dist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+                if dist < shortest then shortest = dist; nearest = p end
+            end
+        end
+    end
+    return nearest
+end
+
+-- // DRAG MENU //
+local function MakeDraggable(gui)
+    local dragging, dragInput, dragStart, startPos
+    gui.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and not IsInteracting then
+            dragging = true; dragStart = input.Position; startPos = gui.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+        end
+    end)
+    gui.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end end)
+    RunService.RenderStepped:Connect(function()
+        if dragging and dragInput and not IsInteracting then
+            local delta = dragInput.Position - dragStart
+            gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- // KHOI TAO GUI //
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.Name = "BreakHub_Fixed_Final"
+
+local Loading = Instance.new("Frame", gui)
+Loading.Size = UDim2.new(0, 250, 0, 80); Loading.Position = UDim2.new(0.5, 0, 0.5, 0); Loading.AnchorPoint = Vector2.new(0.5, 0.5)
+Loading.BackgroundColor3 = Color3.fromRGB(20, 20, 20); Instance.new("UICorner", Loading)
+local LTitle = Instance.new("TextLabel", Loading)
+LTitle.Size = UDim2.new(1, 0, 1, 0); LTitle.Text = "Break Hub"; LTitle.Font = "GothamBold"; LTitle.TextColor3 = Color3.new(1,1,1); LTitle.TextSize = 22; LTitle.BackgroundTransparency = 1
+local LBar = Instance.new("Frame", Loading)
+LBar.Size = UDim2.new(0, 0, 0, 3); LBar.Position = UDim2.new(0, 0, 1, -3); LBar.BackgroundColor3 = Color3.new(1,1,1)
+
+local Main = Instance.new("Frame", gui)
+Main.Size = UDim2.new(0, 560, 0, 380); Main.Position = UDim2.new(0.5, 0, 0.5, 0); Main.AnchorPoint = Vector2.new(0.5, 0.5)
+Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15); Main.Visible = false
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 14)
+MakeDraggable(Main)
+
+local Sidebar = Instance.new("Frame", Main)
+Sidebar.Size = UDim2.new(0, 150, 1, -24); Sidebar.Position = UDim2.new(0, 12, 0, 12); Sidebar.BackgroundColor3 = Color3.fromRGB(5, 5, 5); Sidebar.BackgroundTransparency = 0.4; Instance.new("UICorner", Sidebar)
+local Logo = Instance.new("TextLabel", Sidebar)
+Logo.Size = UDim2.new(1, 0, 0, 50); Logo.Text = "Break Hub"; Logo.Font = "GothamBold"; Logo.TextColor3 = Color3.new(1,1,1); Logo.TextSize = 22; Logo.BackgroundTransparency = 1
+local Github = Instance.new("TextLabel", Sidebar)
+Github.Size = UDim2.new(1, 0, 0, 20); Github.Position = UDim2.new(0, 0, 0, 42); Github.Text = "GitHub:breakict"; Github.Font = "GothamMedium"; Github.TextColor3 = Color3.new(0.6, 0.6, 0.6); Github.TextSize = 10; Github.BackgroundTransparency = 1
+local TabHolder = Instance.new("Frame", Sidebar)
+TabHolder.Size = UDim2.new(1, -20, 1, -120); TabHolder.Position = UDim2.new(0, 10, 0, 85); TabHolder.BackgroundTransparency = 1; Instance.new("UIListLayout", TabHolder).Padding = UDim.new(0, 6)
+local Content = Instance.new("Frame", Main)
+Content.Size = UDim2.new(1, -185, 1, -30); Content.Position = UDim2.new(0, 172, 0, 15); Content.BackgroundTransparency = 1
+
+local function CreateTab(name)
+    local btn = Instance.new("TextButton", TabHolder)
+    btn.Size = UDim2.new(1, 0, 0, 35); btn.BackgroundTransparency = 1; btn.Text = name; btn.Font = "GothamMedium"; btn.TextColor3 = Color3.new(0.5,0.5,0.5); btn.TextSize = 13; Instance.new("UICorner", btn)
+    local page = Instance.new("ScrollingFrame", Content); page.Size = UDim2.new(1, 0, 1, 0); page.BackgroundTransparency = 1; page.Visible = false; page.ScrollBarThickness = 0; Instance.new("UIListLayout", page).Padding = UDim.new(0, 15)
+    btn.MouseButton1Click:Connect(function()
+        for _, v in pairs(Content:GetChildren()) do if v:IsA("ScrollingFrame") then v.Visible = false end end
+        page.Visible = true
+        for _, b in pairs(TabHolder:GetChildren()) do if b:IsA("TextButton") then b.TextColor3 = Color3.new(0.5,0.5,0.5) end end
+        btn.TextColor3 = Color3.new(1,1,1)
+    end)
+    return page
+end
+
+local function AddToggle(parent, text, default, callback)
+    local hold = Instance.new("Frame", parent); hold.Size = UDim2.new(1, -10, 0, 35); hold.BackgroundTransparency = 1
+    local lbl = Instance.new("TextLabel", hold); lbl.Text = text; lbl.Size = UDim2.new(1, -50, 1, 0); lbl.Font = "Gotham"; lbl.TextColor3 = Color3.new(0.85,0.85,0.85); lbl.TextSize = 13; lbl.TextXAlignment = "Left"; lbl.BackgroundTransparency = 1
+    local btn = Instance.new("TextButton", hold); btn.Size = UDim2.new(0, 34, 0, 18); btn.Position = UDim2.new(1, -35, 0.5, -9); btn.BackgroundColor3 = default and Color3.new(1,1,1) or Color3.fromRGB(50,50,50); btn.Text = ""; Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+    local circ = Instance.new("Frame", btn); circ.Size = UDim2.new(0, 12, 0, 12); circ.Position = default and UDim2.new(1, -16, 0.5, -6) or UDim2.new(0, 4, 0.5, -6); circ.BackgroundColor3 = default and Color3.new(0,0,0) or Color3.new(1,1,1); Instance.new("UICorner", circ).CornerRadius = UDim.new(1, 0)
+    btn.MouseButton1Click:Connect(function()
+        local state = not (circ.Position.X.Offset == -16)
+        Animate(btn, {BackgroundColor3 = state and Color3.new(1,1,1) or Color3.fromRGB(50,50,50)}, 0.1)
+        Animate(circ, {Position = state and UDim2.new(1, -16, 0.5, -6) or UDim2.new(0, 4, 0.5, -6), BackgroundColor3 = state and Color3.new(0,0,0) or Color3.new(1,1,1)}, 0.1)
+        callback(state)
+    end)
+end
+
+local function AddSlider(parent, text, min, max, def, callback)
+    local hold = Instance.new("Frame", parent); hold.Size = UDim2.new(1, -10, 0, 45); hold.BackgroundTransparency = 1
+    local lbl = Instance.new("TextLabel", hold); lbl.Text = text; lbl.Size = UDim2.new(1, -60, 0, 20); lbl.Font = "Gotham"; lbl.TextColor3 = Color3.new(0.8,0.8,0.8); lbl.TextSize = 12; lbl.TextXAlignment = "Left"; lbl.BackgroundTransparency = 1
+    
+    local inp = Instance.new("TextBox", hold)
+    inp.Size = UDim2.new(0, 45, 0, 18); inp.Position = UDim2.new(1, -45, 0, 0); inp.BackgroundColor3 = Color3.fromRGB(30,30,30); inp.Text = tostring(def); inp.TextColor3 = Color3.new(1,1,1); inp.Font = "GothamBold"; inp.TextSize = 11; Instance.new("UICorner", inp)
+    
+    local bar = Instance.new("Frame", hold); bar.Position = UDim2.new(0, 0, 0, 28); bar.Size = UDim2.new(1, 0, 0, 6); bar.BackgroundColor3 = Color3.fromRGB(45,45,45); Instance.new("UICorner", bar)
+    local fill = Instance.new("Frame", bar); fill.Size = UDim2.new((def-min)/(max-min), 0, 1, 0); fill.BackgroundColor3 = Color3.new(1,1,1); Instance.new("UICorner", fill)
+    
+    local function update(v)
+        local val = math.clamp(math.floor(v), min, max)
+        fill.Size = UDim2.new((val-min)/(max-min), 0, 1, 0)
+        inp.Text = tostring(val)
+        callback(val)
+    end
+    
+    local sliding = false
+    bar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then sliding = true; IsInteracting = true end end)
+    UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then sliding = false; IsInteracting = false end end)
+    RunService.RenderStepped:Connect(function()
+        if sliding and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            local pos = math.clamp((UserInputService:GetMouseLocation().X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+            update(min + (max-min)*pos)
+        end
+    end)
+    
+    inp.FocusLost:Connect(function()
+        local n = tonumber(inp.Text)
+        if n then update(n) else inp.Text = tostring(def) end
+    end)
+end
+
+local function AddKeybind(parent, text, default, callback)
+    local hold = Instance.new("Frame", parent); hold.Size = UDim2.new(1, -10, 0, 35); hold.BackgroundTransparency = 1
+    local lbl = Instance.new("TextLabel", hold); lbl.Text = text; lbl.Size = UDim2.new(1, -80, 1, 0); lbl.Font = "Gotham"; lbl.TextColor3 = Color3.new(0.8,0.8,0.8); lbl.TextSize = 13; lbl.TextXAlignment = "Left"; lbl.BackgroundTransparency = 1
+    local btn = Instance.new("TextButton", hold); btn.Position = UDim2.new(1, -75, 0.5, -11); btn.Size = UDim2.new(0, 75, 0, 22); btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40); btn.Text = default.Name; btn.Font = "GothamMedium"; btn.TextColor3 = Color3.new(1,1,1); btn.TextSize = 11; Instance.new("UICorner", btn)
+    btn.MouseButton1Click:Connect(function()
+        btn.Text = "..."; local inputWait; inputWait = UserInputService.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then btn.Text = input.KeyCode.Name; callback(input.KeyCode); inputWait:Disconnect() end
+        end)
+    end)
+end
+
+local combat = CreateTab("Combat")
+combat.Visible = true
+AddToggle(combat, "Aimlock Enabled", false, function(v) _G.AIM_ON = v end)
+AddKeybind(combat, "Aimlock Key", _G.AIM_KEY, function(v) _G.AIM_KEY = v end)
+AddToggle(combat, "Show FOV Circle", false, function(v) _G.ShowFOV = v end)
+AddSlider(combat, "Aimbot FOV", 10, 800, _G.AimbotFOV, function(v) _G.AimbotFOV = v end)
+AddToggle(combat, "Hitbox", false, function(v) _G.Hitbox = v end)
+AddSlider(combat, "Size Hitbox", 2, 50, _G.HitboxSize, function(v) _G.HitboxSize = v end)
+
+local visuals = CreateTab("Visuals")
+AddToggle(visuals, "ESP Box", false, function(v) _G.EspBox = v end)
+AddToggle(visuals, "ESP Name", false, function(v) _G.EspName = v end)
+AddToggle(visuals, "ESP Health", false, function(v) _G.EspHealth = v end)
+AddToggle(visuals, "ESP Distance", false, function(v) _G.EspDistance = v end)
+
+local misc = CreateTab("Misc")
+AddKeybind(misc, "Toggle Menu Key", _G.GUI_KEY, function(v) _G.GUI_KEY = v end)
+
+-- // ESP LOGIC //
+local function CreateESP(p)
+    local Box = Drawing.new("Square"); Box.Thickness = 1.5; Box.Visible = false; Box.Filled = false
+    local Name = Drawing.new("Text"); Name.Size = 14; Name.Center = true; Name.Outline = true; Name.Visible = false; Name.Color = Color3.new(1,1,1)
+    local Dist = Drawing.new("Text"); Dist.Size = 14; Dist.Center = true; Dist.Outline = true; Dist.Visible = false; Dist.Color = Color3.new(1,1,1)
+    local HBg = Drawing.new("Square"); HBg.Thickness = 0; HBg.Filled = true; HBg.Color = Color3.fromRGB(25,25,25); HBg.Transparency = 0.8; HBg.Visible = false
+    local HFg = Drawing.new("Square"); HFg.Thickness = 0; HFg.Filled = true; HFg.Transparency = 0.9; HFg.Visible = false
+
+    RunService.RenderStepped:Connect(function()
+        local isEnemy, espColor = GetPlayerInfo(p)
+        if p ~= LP and isEnemy and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            local root = p.Character.HumanoidRootPart
+            local hum = p.Character.Humanoid
+            local pos, onscreen = Camera:WorldToViewportPoint(root.Position)
+            if onscreen then
+                local size = 2800 / pos.Z; local height = size * 1.3; local x, y = pos.X - size/2, pos.Y - height/2
+                Box.Visible = _G.EspBox; if _G.EspBox then Box.Size = Vector2.new(size, height); Box.Position = Vector2.new(x, y); Box.Color = espColor end
+                Name.Visible = _G.EspName; if _G.EspName then Name.Text = p.Name; Name.Position = Vector2.new(pos.X, y - 16) end
+                Dist.Visible = _G.EspDistance; if _G.EspDistance then 
+                    local d = math.floor((LP.Character.HumanoidRootPart.Position - root.Position).Magnitude)
+                    Dist.Text = "["..d.."m]"; Dist.Position = Vector2.new(pos.X, y + height + 2)
+                end
+                HBg.Visible = _G.EspHealth; HFg.Visible = _G.EspHealth; if _G.EspHealth then
+                    local hp = hum.Health/hum.MaxHealth; local hH = math.clamp(12000/pos.Z, 20, 42)
+                    HBg.Size = Vector2.new(3, hH); HBg.Position = Vector2.new(x - 6, pos.Y - hH/2)
+                    HFg.Size = Vector2.new(3, hH * hp); HFg.Position = Vector2.new(x - 6, (pos.Y - hH/2) + hH * (1 - hp)); HFg.Color = Color3.fromRGB(255*(1-hp), 255*hp, 60)
+                end
+                return
+            end
+        end
+        Box.Visible = false; Name.Visible = false; Dist.Visible = false; HBg.Visible = false; HFg.Visible = false
+        if not p.Parent then Box:Remove(); Name:Remove(); Dist:Remove(); HBg:Remove(); HFg:Remove() end
+    end)
+end
+
+for _, p in pairs(Players:GetPlayers()) do CreateESP(p) end
+Players.PlayerAdded:Connect(CreateESP)
+
+-- // MAIN LOOP //
+RunService.RenderStepped:Connect(function()
+    FOVCircle.Position = UserInputService:GetMouseLocation()
+    FOVCircle.Radius = _G.AimbotFOV; FOVCircle.Visible = _G.ShowFOV
+    if _G.AIM_ON and lockedPlayer and lockedPlayer.Character and lockedPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, lockedPlayer.Character.HumanoidRootPart.Position)
+    end
+    if _G.Hitbox then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LP and GetPlayerInfo(p) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                p.Character.HumanoidRootPart.Size = Vector3.new(_G.HitboxSize, _G.HitboxSize, _G.HitboxSize)
+                -- CHỈNH Ở ĐÂY: Transparency = 1 để tàng hình hoàn toàn
+                p.Character.HumanoidRootPart.Transparency = 1 
+                p.Character.HumanoidRootPart.CanCollide = false
+            end
+        end
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(i, gp)
+    if not gp and i.KeyCode == _G.AIM_KEY and _G.AIM_ON then
+        lockedPlayer = (not lockedPlayer) and getNearestEnemy() or nil
+    end
+    if not gp and i.KeyCode == _G.GUI_KEY then 
+        GUI_VISIBLE = not GUI_VISIBLE
+        Main.Visible = GUI_VISIBLE 
+    end
+end)
+
+task.spawn(function()
+    Main.Visible = false
+    Animate(LBar, {Size = UDim2.new(1, 0, 0, 3)}, 2.5)
+    task.wait(2.7)
+    Loading:Destroy()
+    Main.Visible = true
+    GUI_VISIBLE = true
+end)
